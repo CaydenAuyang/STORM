@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" href="data:," />
+<title>STORM</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    color: #fff;
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  }
+
+  body {
+    position: relative;
+  }
+
+  /* Behind UI; pinned so appended WebGL canvas does not hide #webcam. */
+  canvas {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+  }
+
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 20px;
+    z-index: 10;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #hud div {
+    white-space: pre;
+  }
+
+  #state-label {
+    position: fixed;
+    bottom: 36px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    z-index: 10;
+    color: rgba(180, 200, 220, 0.7);
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Courier New", monospace;
+    font-size: 28px;
+    letter-spacing: 16px;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+    transition: color 0.5s ease-out;
+  }
+
+  #vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    background: radial-gradient(ellipse at center, transparent 18%, rgba(0, 0, 0, 0.98) 95%);
+    opacity: 0.2;
+    pointer-events: none;
+  }
+
+  #energy-meter {
+    position: fixed;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 60vh;
+    z-index: 12;
+    pointer-events: none;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: stretch;
+  }
+  #energy-meter .meter-header {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.55);
+  }
+  #energy-meter .meter-readout {
+    position: absolute;
+    bottom: -22px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  #energy-meter .energy-track {
+    position: relative;
+    width: 8px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    margin-right: 14px;
+  }
+  #energy-meter .energy-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 0%;
+    background: linear-gradient(
+      to top,
+      rgba(70, 130, 170, 0.85) 0%,
+      rgba(200, 170, 80, 0.9) 45%,
+      rgba(220, 80, 50, 0.95) 75%,
+      rgba(255, 240, 230, 1.0) 100%
+    );
+    transition: height 50ms linear;
+  }
+  #energy-meter .energy-threshold {
+    position: absolute;
+    left: -4px;
+    width: 16px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.85);
+  }
+  #energy-meter .energy-labels {
+    position: relative;
+    height: 100%;
+    width: 110px;
+  }
+  #energy-meter .energy-labels span {
+    position: absolute;
+    left: 0;
+    white-space: nowrap;
+    text-transform: uppercase;
+    transform: translateY(50%);
+    color: rgba(255, 255, 255, 0.6);
+  }
+  #energy-meter .energy-labels span small {
+    color: rgba(255, 255, 255, 0.35);
+    margin-left: 6px;
+    letter-spacing: 1px;
+  }
+
+  #env-switcher {
+    position: fixed;
+    top: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    z-index: 13;
+  }
+  .env-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.55);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 9px;
+    letter-spacing: 4px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  .env-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+  .env-btn.active {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 1);
+  }
+  #env-label {
+    display: none;
+  }
+
+  #soundwave-canvas {
+    position: fixed;
+    top: 28px;
+    right: 28px;
+    width: 200px;
+    height: 44px;
+    pointer-events: none;
+    z-index: 12;
+    opacity: 0.85;
+  }
+
+  #activate-btn {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.65);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    padding: 14px 28px 14px 36px;
+    cursor: pointer;
+    z-index: 15;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.5s ease, background 0.3s ease, color 0.3s ease, border 0.3s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  #activate-btn.visible { opacity: 1; pointer-events: auto; }
+  #activate-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+  #activate-btn.fading-out { opacity: 0 !important; pointer-events: none; }
+
+  #restart-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(0, 0, 0, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    cursor: pointer;
+    color: rgba(220, 220, 220, 0.95);
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Courier New", monospace;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    transition: opacity 0.6s ease-out;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #restart-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #restart-overlay .sub {
+    font-size: 18px;
+    color: rgba(180, 180, 180, 0.85);
+  }
+  #restart-overlay .pulse {
+    font-size: 14px;
+    color: rgba(220, 220, 220, 0.7);
+    animation: restart-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes restart-pulse {
+    0%, 100% { opacity: 0.4; }
+    50%      { opacity: 1.0; }
+  }
+
+  #preflight {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    letter-spacing: 1px;
+    white-space: pre;
+    text-align: right;
+    pointer-events: none;
+    user-select: none;
+    display: none;
+  }
+
+  #flash {
+    position: fixed;
+    inset: 0;
+    background: #ffffff;
+    opacity: 0;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  #webcam {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 200px;
+    height: 150px;
+    z-index: 28;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    opacity: 0.55;
+    transform: scaleX(-1);
+    object-fit: cover;
+    background: #000;
+    pointer-events: none;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="hud">
+    <div id="hud-sound">SOUND  (0.00)</div>
+    <div id="hud-bodies">BODIES (0)</div>
+    <div id="hud-hands">HANDS  (0.00)</div>
+    <div id="hud-energy">ENERGY (0.00)</div>
+  </div>
+
+  <div id="state-label">CALM</div>
+
+  <div id="env-switcher">
+    <button class="env-btn active" data-env="ocean">OCEAN</button>
+    <button class="env-btn" data-env="mountains">MOUNTAINS</button>
+    <button class="env-btn" data-env="arctic">ARCTIC</button>
+  </div>
+  <div id="env-label">OCEAN</div>
+  <div id="vignette"></div>
+  <div id="preflight"></div>
+  <canvas id="soundwave-canvas" width="200" height="44"></canvas>
+  <div id="energy-meter">
+    <div class="meter-header">ENERGY</div>
+    <div class="energy-track">
+      <div class="energy-fill"></div>
+      <div class="energy-threshold" style="bottom: 18%"></div>
+      <div class="energy-threshold" style="bottom: 50%"></div>
+      <div class="energy-threshold" style="bottom: 80%"></div>
+    </div>
+    <div class="energy-labels">
+      <span style="bottom: 80%">apocalypse <small>0.80</small></span>
+      <span style="bottom: 50%">tempest <small>0.50</small></span>
+      <span style="bottom: 18%">charged <small>0.18</small></span>
+    </div>
+    <div class="meter-readout">0.00</div>
+  </div>
+  <button id="activate-btn">sit back and relax</button>
+  <div id="restart-overlay">
+    <div class="sub">the storm has passed</div>
+    <div class="pulse">click to begin again</div>
+  </div>
+
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <div id="flash"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
